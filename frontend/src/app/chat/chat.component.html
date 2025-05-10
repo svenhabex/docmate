@@ -1,6 +1,11 @@
 <div class="flex flex-col justify-end gap-6 flex-1 h-full">
-  <div class="result">
-    {{ messages | json }}
+  <div class="flex flex-col gap-6">
+    @for (message of messages; track message.text) {
+    <app-message-bubble
+      [content]="message.text"
+      [type]="message.sender === 'user' ? 'sent' : 'received'"
+    />
+    }
   </div>
 
   <form
@@ -14,7 +19,7 @@
       pTextarea
       formControlName="message"
       style="border: none; background-color: transparent"
-      (keydown.control.enter)="onSendMessage()"
+      (keydown)="onKeyDown($event)"
     ></textarea>
     <div class="flex pr-4 pb-4 pt-4">
       <button pButton icon="pi pi-send" [loading]="isLoading()" type="submit">

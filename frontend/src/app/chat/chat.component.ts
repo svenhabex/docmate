@@ -6,14 +6,19 @@ import {
 } from '@angular/core';
 import { ChatService, ChatResponse } from './chat.service';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { JsonPipe } from '@angular/common';
 import { TextareaModule } from 'primeng/textarea';
 import { ButtonModule } from 'primeng/button';
+import { MessageBubbleComponent } from './message-bubble/message-bubble.component';
 
 @Component({
   selector: 'app-chat',
   templateUrl: './chat.component.html',
-  imports: [ReactiveFormsModule, JsonPipe, TextareaModule, ButtonModule],
+  imports: [
+    ReactiveFormsModule,
+    TextareaModule,
+    ButtonModule,
+    MessageBubbleComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ChatComponent {
@@ -61,6 +66,18 @@ export class ChatComponent {
       console.error('Error in onSendMessage:', error);
       this.messages.push({ text: 'Client-side error.', sender: 'bot' });
       this.isLoading.set(false);
+    }
+  }
+
+  onKeyDown(event: KeyboardEvent) {
+    if (event.key === 'Enter' && event.shiftKey) {
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      event.stopPropagation();
+      this.onSendMessage();
     }
   }
 }
