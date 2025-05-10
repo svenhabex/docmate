@@ -1,8 +1,25 @@
-<textarea name="" id="" cols="30" rows="10" [formControl]="chatInputControl">
-</textarea>
-<button (click)="onSendMessage()">Send</button>
-
-
-<div class="result">
+<div class="flex flex-col justify-end gap-6 flex-1 h-full">
+  <div class="result">
     {{ messages | json }}
+  </div>
+
+  <form
+    (ngSubmit)="onSendMessage()"
+    class="flex items-end gap-4 border border-surface-700 rounded-xl bg-surface-900"
+    [formGroup]="form"
+  >
+    <textarea
+      name="input"
+      class="flex-1 field-sizing-content border-none bg-transparent h-full max-h-[400px] resize-none"
+      pTextarea
+      formControlName="message"
+      style="border: none; background-color: transparent"
+      (keydown.control.enter)="onSendMessage()"
+    ></textarea>
+    <div class="flex pr-4 pb-4 pt-4">
+      <button pButton icon="pi pi-send" [loading]="isLoading()" type="submit">
+        Send
+      </button>
+    </div>
+  </form>
 </div>
