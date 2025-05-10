@@ -1,8 +1,7 @@
-# backend/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from langchain_community.vectorstores import FAISS  # Or Chroma
+from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.chat_models import ChatOllama
 from langchain.prompts import PromptTemplate
@@ -14,12 +13,7 @@ load_dotenv()
 
 app = FastAPI()
 
-# CORS (Cross-Origin Resource Sharing) middleware
-# Allows your Angular frontend (running on a different port) to communicate with this backend.
-origins = [
-    "http://localhost:4200",  # Default Angular dev server port
-    # Add any other origins if necessary
-]
+origins = ["http://localhost:4200"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -28,10 +22,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-VECTOR_STORE_PATH = "vectorstore/db_faiss"  # Or "vectorstore/db_chroma"
+VECTOR_STORE_PATH = "vectorstore/db_faiss"
 OLLAMA_MODEL_NAME = os.getenv("OLLAMA_MODEL_NAME", "llama3")
 
-# --- Langchain Setup ---
 print("Loading embeddings model and vector store...")
 embeddings = OllamaEmbeddings(model=OLLAMA_MODEL_NAME)
 
