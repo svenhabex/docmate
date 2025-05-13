@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="86" height="86"><svg width="86" height="86" viewBox="0 0 86 86" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M52.9701 18.3844C55.616 18.3994 58.0597 19.7808 59.4391 22.0247L59.5687 22.2442L69.303 39.3264C70.6552 41.6994 70.6383 44.614 69.2593 46.9714L59.3323 63.9425C57.9963 66.2263 55.5784 67.6518 52.9454 67.7244L52.6905 67.7269L33.0292 67.6157C30.3837 67.6005 27.9404 66.2194 26.561 63.9759L26.4306 63.756L16.6968 46.6729C15.3449 44.3 15.3612 41.386 16.74 39.0287L26.6669 22.0576C28.0028 19.7739 30.4211 18.3485 33.0539 18.2757L33.3092 18.2723L52.9701 18.3844Z" stroke="#858DE5" stroke-width="5.09644"></path>
+<line x1="30" y1="34" x2="56" y2="34" stroke="#858DE5" stroke-width="4" stroke-linecap="round"></line>
+<line x1="30" y1="52" x2="56" y2="52" stroke="#858DE5" stroke-width="4" stroke-linecap="round"></line>
+<line x1="30" y1="43" x2="47" y2="43" stroke="#858DE5" stroke-width="4" stroke-linecap="round"></line>
+</svg><style>@media (prefers-color-scheme: light) { :root { filter: none; } }
+@media (prefers-color-scheme: dark) { :root { filter: none; } }
+</style></svg>

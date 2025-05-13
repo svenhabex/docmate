@@ -19,7 +19,7 @@ export class MessageBubbleComponent {
 
   readonly typeClasses = computed(() => {
     return this.type() === 'sent'
-      ? 'ml-auto bg-primary'
+      ? 'ml-auto bg-surface-500'
       : 'mr-auto bg-surface-700';
   });
 }
