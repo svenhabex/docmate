@@ -3,7 +3,7 @@
     @for (message of messages(); track message.text) {
     <app-message-bubble
       [content]="message.text"
-      [type]="message.sender === 'user' ? 'sent' : 'received'"
+      [type]="message.sender"
     />
     }
   </div>

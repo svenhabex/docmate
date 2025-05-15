@@ -4,8 +4,7 @@ import {
   computed,
   input,
 } from '@angular/core';
-
-export type MessageType = 'sent' | 'received';
+import { MessageSender } from '../chat.service';
 
 @Component({
   selector: 'app-message-bubble',
@@ -15,11 +14,11 @@ export type MessageType = 'sent' | 'received';
 })
 export class MessageBubbleComponent {
   readonly content = input.required<string>();
-  readonly type = input.required<MessageType>();
+  readonly type = input.required<MessageSender>();
 
   readonly typeClasses = computed(() => {
-    return this.type() === 'sent'
-      ? 'ml-auto bg-surface-500'
+    return this.type() === 'user'
+      ? 'ml-auto bg-primary-500'
       : 'mr-auto bg-surface-700';
   });
 }

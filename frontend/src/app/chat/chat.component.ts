@@ -4,8 +4,18 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { ChatService, StreamedChatResponsePart, Source } from './chat.service';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import {
+  ChatService,
+  StreamedChatResponsePart,
+  Source,
+  MessageSender,
+} from './chat.service';
+import {
+  FormControl,
+  FormGroup,
+  ReactiveFormsModule,
+  Validators,
+} from '@angular/forms';
 import { TextareaModule } from 'primeng/textarea';
 import { ButtonModule } from 'primeng/button';
 import { MessageBubbleComponent } from './message-bubble/message-bubble.component';
@@ -24,96 +34,18 @@ import { MessageBubbleComponent } from './message-bubble/message-bubble.componen
 export class ChatComponent {
   readonly #chatService = inject(ChatService);
 
-  form = new FormGroup({ message: new FormControl('') });
+  form = new FormGroup({ message: new FormControl('', [Validators.required]) });
   messages = signal<
     Array<{
       text: string;
-      sender: 'user' | 'bot';
+      sender: MessageSender;
       sources?: Source[];
       isLoading?: boolean;
     }>
   >([]);
   isGloballyLoading = signal(false);
 
-  async onSendMessage() {
-    const userInput = this.form.get('message')?.value;
-    if (!userInput?.trim()) {
-      return;
-    }
-
-    const userMessageText = userInput.trim();
-    this.messages.update((currentMessages) => [
-      ...currentMessages,
-      { text: userMessageText, sender: 'user' },
-    ]);
-    this.form.get('message')?.reset();
-    this.isGloballyLoading.set(true);
-
-    const botMessageIndex = this.messages().length;
-    this.messages.update((currentMessages) => [
-      ...currentMessages,
-      { text: '', sender: 'bot', sources: [], isLoading: true },
-    ]);
-
-    this.#chatService.sendMessage(userMessageText).subscribe({
-      next: (responsePart: StreamedChatResponsePart) => {
-        this.messages.update((currentMessages) => {
-          const updatedMessages = [...currentMessages];
-          const currentBotMessage = updatedMessages[botMessageIndex];
-
-          if (responsePart.type === 'sources') {
-            currentBotMessage.sources = responsePart.data;
-          } else if (responsePart.type === 'chunk') {
-            currentBotMessage.text += responsePart.data;
-          } else if (responsePart.type === 'done') {
-            currentBotMessage.isLoading = false;
-            this.isGloballyLoading.set(false);
-          } else if (responsePart.type === 'error') {
-            console.error('Error in stream:', responsePart.error);
-            currentBotMessage.text =
-              'Error: Could not get a streamed response.';
-            currentBotMessage.isLoading = false;
-            this.isGloballyLoading.set(false);
-          }
-          return updatedMessages;
-        });
-      },
-      error: (error) => {
-        console.error('Error sending message stream:', error);
-        this.messages.update((currentMessages) => {
-          const updatedMessages = [...currentMessages];
-          const currentBotMessage = updatedMessages[botMessageIndex];
-          if (currentBotMessage && currentBotMessage.sender === 'bot') {
-            currentBotMessage.text =
-              'Error: Failed to connect to streaming service.';
-            currentBotMessage.isLoading = false;
-          } else {
-            updatedMessages.push({
-              text: 'Error: Failed to connect to streaming service.',
-              sender: 'bot',
-              isLoading: false,
-            });
-          }
-          return updatedMessages;
-        });
-        this.isGloballyLoading.set(false);
-      },
-      complete: () => {
-        this.messages.update((currentMessages) => {
-          const updatedMessages = [...currentMessages];
-          const currentBotMessage = updatedMessages[botMessageIndex];
-          if (currentBotMessage && currentBotMessage.isLoading) {
-            currentBotMessage.isLoading = false;
-          }
-          return updatedMessages;
-        });
-
-        this.isGloballyLoading.set(false);
-      },
-    });
-  }
-
-  onKeyDown(event: KeyboardEvent) {
+  onKeyDown(event: KeyboardEvent): void {
     if (event.key === 'Enter' && event.shiftKey) {
       return;
     }
@@ -123,5 +55,139 @@ export class ChatComponent {
       event.stopPropagation();
       this.onSendMessage();
     }
+  }
+
+  async onSendMessage() {
+    const messageControl = this.form.get('message');
+    this.form.markAsTouched();
+    if (this.form.invalid || !messageControl?.value) {
+      return;
+    }
+
+    const userMessageText = messageControl?.value.trim();
+
+    this.displayUserMessage(userMessageText);
+    const assistantMessageIndex = this.prepareForAssistantResponse();
+
+    this.#chatService.sendMessage(userMessageText).subscribe({
+      next: (part) => this.handleStreamPart(part, assistantMessageIndex),
+      error: (error) => this.handleStreamError(error, assistantMessageIndex),
+      complete: () => this.handleStreamComplete(assistantMessageIndex),
+    });
+  }
+
+  private displayUserMessage(text: string) {
+    this.messages.update((currentMessages) => [
+      ...currentMessages,
+      { text, sender: 'user' },
+    ]);
+  }
+
+  private prepareForAssistantResponse(): number {
+    this.form.get('message')?.reset();
+    this.isGloballyLoading.set(true);
+
+    const assistantMessageIndex = this.messages().length;
+    this.messages.update((currentMessages) => [
+      ...currentMessages,
+      { text: '', sender: 'assistant', sources: [], isLoading: true },
+    ]);
+
+    return assistantMessageIndex;
+  }
+
+  private handleStreamPart(
+    responsePart: StreamedChatResponsePart,
+    assistantMessageIndex: number
+  ): void {
+    this.messages.update((currentMessages) => {
+      const updatedMessages = [...currentMessages];
+      if (
+        assistantMessageIndex >= updatedMessages.length ||
+        updatedMessages[assistantMessageIndex].sender !== 'assistant'
+      ) {
+        console.error(
+          'Assistant message not found at expected index or type mismatch.'
+        );
+        if (responsePart.type === 'error' || responsePart.type === 'done') {
+          this.isGloballyLoading.set(false);
+        }
+
+        return updatedMessages;
+      }
+
+      const currentAssistantMessage = updatedMessages[assistantMessageIndex];
+
+      switch (responsePart.type) {
+        case 'sources':
+          currentAssistantMessage.sources = responsePart.data;
+          break;
+        case 'chunk':
+          currentAssistantMessage.text += responsePart.data;
+          break;
+        case 'done':
+          currentAssistantMessage.isLoading = false;
+          this.isGloballyLoading.set(false);
+          break;
+        case 'error':
+          console.error('Error in stream part:', responsePart.error);
+          currentAssistantMessage.text =
+            'Error: Could not get a streamed response.';
+          currentAssistantMessage.isLoading = false;
+          this.isGloballyLoading.set(false);
+          break;
+      }
+
+      return updatedMessages;
+    });
+  }
+
+  private handleStreamError(
+    error: string,
+    assistantMessageIndex: number
+  ): void {
+    console.error('Error sending message stream:', error);
+    this.messages.update((currentMessages) => {
+      const updatedMessages = [...currentMessages];
+
+      if (
+        assistantMessageIndex < updatedMessages.length &&
+        updatedMessages[assistantMessageIndex]?.sender === 'assistant'
+      ) {
+        const currentAssistantMessage = updatedMessages[assistantMessageIndex];
+        currentAssistantMessage.text =
+          'Error: Failed to connect to streaming service.';
+        currentAssistantMessage.isLoading = false;
+      } else {
+        updatedMessages.push({
+          text: 'Error: Failed to connect to streaming service.',
+          sender: 'assistant',
+          isLoading: false,
+        });
+      }
+
+      return updatedMessages;
+    });
+
+    this.isGloballyLoading.set(false);
+  }
+
+  private handleStreamComplete(assistantMessageIndex: number): void {
+    this.messages.update((currentMessages) => {
+      const updatedMessages = [...currentMessages];
+      if (
+        assistantMessageIndex < updatedMessages.length &&
+        updatedMessages[assistantMessageIndex]?.sender === 'assistant'
+      ) {
+        const currentAssistantMessage = updatedMessages[assistantMessageIndex];
+        if (currentAssistantMessage.isLoading) {
+          currentAssistantMessage.isLoading = false;
+        }
+      }
+
+      return updatedMessages;
+    });
+
+    this.isGloballyLoading.set(false);
   }
 }

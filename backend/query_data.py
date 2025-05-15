@@ -57,7 +57,6 @@ def query_rag(query_text: str):
 
 
 def query_rag_stream(query_text: str):
-    # Prepare the DB.
     embedding_function = get_embedding_function()
     db = Chroma(persist_directory=VECTOR_STORE_PATH,
                 embedding_function=embedding_function)
