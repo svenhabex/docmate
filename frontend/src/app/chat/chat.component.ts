@@ -1,15 +1,5 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  inject,
-  signal,
-} from '@angular/core';
-import {
-  ChatService,
-  StreamedChatResponsePart,
-  Source,
-  MessageSender,
-} from './chat.service';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChatService } from './chat.service';
 import {
   FormControl,
   FormGroup,
@@ -19,6 +9,55 @@ import {
 import { TextareaModule } from 'primeng/textarea';
 import { ButtonModule } from 'primeng/button';
 import { MessageBubbleComponent } from './message-bubble/message-bubble.component';
+import { Subject, Observable, concat, of, merge } from 'rxjs';
+import {
+  switchMap,
+  map,
+  scan,
+  catchError,
+  endWith,
+  filter,
+  tap,
+  startWith,
+} from 'rxjs/operators';
+import { toSignal } from '@angular/core/rxjs-interop';
+import {
+  MessageSender,
+  MessageSenderEnum,
+  Source,
+  StreamedChatResponsePart,
+  StreamedResponsePartTypeEnum,
+} from './chat.types';
+
+type ChatMessage = {
+  text: string;
+  sender: MessageSender;
+  sources?: Source[];
+  isLoading?: boolean;
+};
+
+type MessagesState = {
+  messages: ReadonlyArray<ChatMessage>;
+  activeAssistantMessageIndex: number | null;
+};
+
+const MessageActionTypeEnum = {
+  AddUserMessage: 'addUserMessage',
+  AddAssistantPlaceholder: 'addAssistantPlaceholder',
+  UpdateAssistantMessage: 'updateAssistantMessage',
+  HandleStreamError: 'handleStreamError',
+  StreamCompleted: 'streamCompleted',
+} as const;
+
+type MessageAction =
+  | { type: typeof MessageActionTypeEnum.AddUserMessage; text: string }
+  | { type: typeof MessageActionTypeEnum.AddAssistantPlaceholder }
+  | {
+      type: typeof MessageActionTypeEnum.UpdateAssistantMessage;
+      part: StreamedChatResponsePart;
+    }
+  | { type: typeof MessageActionTypeEnum.HandleStreamError; error: unknown }
+  | { type: typeof MessageActionTypeEnum.StreamCompleted };
 
 @Component({
   selector: 'app-chat',
@@ -34,16 +73,25 @@ import { MessageBubbleComponent } from './message-bubble/message-bubble.componen
 export class ChatComponent {
   readonly #chatService = inject(ChatService);
 
-  form = new FormGroup({ message: new FormControl('', [Validators.required]) });
-  messages = signal<
-    Array<{
-      text: string;
-      sender: MessageSender;
-      sources?: Source[];
-      isLoading?: boolean;
-    }>
-  >([]);
-  isGloballyLoading = signal(false);
+  readonly form = new FormGroup({
+    message: new FormControl('', [Validators.required]),
+  });
+  readonly sendQueryAction = new Subject<string>();
+  readonly messageActions$ = this.getMessageActions();
+  readonly messages = toSignal(this.getMessages(), { initialValue: [] });
+  readonly #loadingStart$ = this.sendQueryAction.pipe(map(() => true));
+  readonly #loadingEnd$ = this.messageActions$.pipe(
+    filter(
+      (action) =>
+        action.type === MessageActionTypeEnum.StreamCompleted ||
+        action.type === MessageActionTypeEnum.HandleStreamError
+    ),
+    map(() => false)
+  );
+  readonly isLoading = toSignal(
+    merge(this.#loadingStart$, this.#loadingEnd$).pipe(startWith(false)),
+    { initialValue: false }
+  );
 
   onKeyDown(event: KeyboardEvent): void {
     if (event.key === 'Enter' && event.shiftKey) {
@@ -53,141 +101,187 @@ export class ChatComponent {
     if (event.key === 'Enter') {
       event.preventDefault();
       event.stopPropagation();
-      this.onSendMessage();
+      this.triggerSendMessage();
     }
   }
 
-  async onSendMessage() {
+  triggerSendMessage(): void {
     const messageControl = this.form.get('message');
-    this.form.markAsTouched();
+    this.form.markAllAsTouched();
+
     if (this.form.invalid || !messageControl?.value) {
       return;
     }
 
-    const userMessageText = messageControl?.value.trim();
-
-    this.displayUserMessage(userMessageText);
-    const assistantMessageIndex = this.prepareForAssistantResponse();
-
-    this.#chatService.sendMessage(userMessageText).subscribe({
-      next: (part) => this.handleStreamPart(part, assistantMessageIndex),
-      error: (error) => this.handleStreamError(error, assistantMessageIndex),
-      complete: () => this.handleStreamComplete(assistantMessageIndex),
-    });
+    const userMessageText = messageControl.value.trim();
+    if (userMessageText) {
+      this.sendQueryAction.next(userMessageText);
+    }
   }
 
-  private displayUserMessage(text: string) {
-    this.messages.update((currentMessages) => [
-      ...currentMessages,
-      { text, sender: 'user' },
-    ]);
-  }
+  private getMessageActions(): Observable<MessageAction> {
+    return this.sendQueryAction.pipe(
+      tap(() => this.form.get('message')?.reset()),
+      switchMap((query) => {
+        const userMessageAction = of({
+          type: MessageActionTypeEnum.AddUserMessage,
+          text: query,
+        });
 
-  private prepareForAssistantResponse(): number {
-    this.form.get('message')?.reset();
-    this.isGloballyLoading.set(true);
+        const assistantPlaceholderAction = of({
+          type: MessageActionTypeEnum.AddAssistantPlaceholder,
+        });
 
-    const assistantMessageIndex = this.messages().length;
-    this.messages.update((currentMessages) => [
-      ...currentMessages,
-      { text: '', sender: 'assistant', sources: [], isLoading: true },
-    ]);
-
-    return assistantMessageIndex;
-  }
-
-  private handleStreamPart(
-    responsePart: StreamedChatResponsePart,
-    assistantMessageIndex: number
-  ): void {
-    this.messages.update((currentMessages) => {
-      const updatedMessages = [...currentMessages];
-      if (
-        assistantMessageIndex >= updatedMessages.length ||
-        updatedMessages[assistantMessageIndex].sender !== 'assistant'
-      ) {
-        console.error(
-          'Assistant message not found at expected index or type mismatch.'
+        const streamActions$ = this.#chatService.sendMessage(query).pipe(
+          map((part) => ({
+            type: MessageActionTypeEnum.UpdateAssistantMessage,
+            part,
+          })),
+          catchError((error) =>
+            of({ type: MessageActionTypeEnum.HandleStreamError, error })
+          ),
+          endWith({ type: MessageActionTypeEnum.StreamCompleted })
         );
-        if (responsePart.type === 'error' || responsePart.type === 'done') {
-          this.isGloballyLoading.set(false);
-        }
 
-        return updatedMessages;
-      }
+        return concat(
+          userMessageAction,
+          assistantPlaceholderAction,
+          streamActions$
+        );
+      })
+    );
+  }
 
-      const currentAssistantMessage = updatedMessages[assistantMessageIndex];
+  private getMessages(): Observable<ReadonlyArray<ChatMessage>> {
+    return this.messageActions$.pipe(
+      scan(
+        (state: MessagesState, action: MessageAction): MessagesState => {
+          switch (action.type) {
+            case MessageActionTypeEnum.AddUserMessage:
+              return this.addUserMessage(state, action.text);
+            case MessageActionTypeEnum.AddAssistantPlaceholder:
+              return this.addAssistantPlaceholder(state);
+            case MessageActionTypeEnum.UpdateAssistantMessage:
+              return this.updateAssistantMessage(state, action.part);
+            case MessageActionTypeEnum.HandleStreamError:
+              return this.handleStreamError(state, action.error);
+            case MessageActionTypeEnum.StreamCompleted:
+              return this.handleStreamCompleted(state);
+            default:
+              return state;
+          }
+        },
+        { messages: [], activeAssistantMessageIndex: null }
+      ),
+      map((state) => state.messages)
+    );
+  }
 
-      switch (responsePart.type) {
-        case 'sources':
-          currentAssistantMessage.sources = responsePart.data;
-          break;
-        case 'chunk':
-          currentAssistantMessage.text += responsePart.data;
-          break;
-        case 'done':
-          currentAssistantMessage.isLoading = false;
-          this.isGloballyLoading.set(false);
-          break;
-        case 'error':
-          console.error('Error in stream part:', responsePart.error);
-          currentAssistantMessage.text =
-            'Error: Could not get a streamed response.';
-          currentAssistantMessage.isLoading = false;
-          this.isGloballyLoading.set(false);
-          break;
-      }
+  private addUserMessage(state: MessagesState, text: string): MessagesState {
+    return {
+      messages: [...state.messages, { text, sender: 'user' }],
+      activeAssistantMessageIndex: null,
+    };
+  }
 
-      return updatedMessages;
+  private addAssistantPlaceholder(state: MessagesState): MessagesState {
+    const newMessages = [...state.messages];
+    const newActiveAssistantIndex = newMessages.length;
+    newMessages.push({
+      text: '',
+      sender: 'assistant',
+      sources: [],
+      isLoading: true,
     });
+    return {
+      messages: newMessages,
+      activeAssistantMessageIndex: newActiveAssistantIndex,
+    };
+  }
+
+  private updateAssistantMessage(
+    state: MessagesState,
+    part: StreamedChatResponsePart
+  ): MessagesState {
+    if (
+      state.activeAssistantMessageIndex === null ||
+      !state.messages[state.activeAssistantMessageIndex]
+    ) {
+      console.error(
+        'UpdateAssistantMessage: No active assistant message index or index out of bounds.'
+      );
+
+      return state;
+    }
+    const newMessages = [...state.messages];
+    const assistantMsg = { ...newMessages[state.activeAssistantMessageIndex] };
+
+    switch (part.type) {
+      case StreamedResponsePartTypeEnum.Sources:
+        assistantMsg.sources = part.data;
+        break;
+      case StreamedResponsePartTypeEnum.Chunk:
+        assistantMsg.text += part.data;
+        break;
+      case StreamedResponsePartTypeEnum.Done:
+        assistantMsg.isLoading = false;
+        break;
+      case StreamedResponsePartTypeEnum.Error:
+        console.error('Error in stream part content:', part.error);
+        assistantMsg.text = 'Error: Could not get a streamed response.';
+        assistantMsg.isLoading = false;
+        break;
+    }
+    newMessages[state.activeAssistantMessageIndex] = assistantMsg;
+
+    return { ...state, messages: newMessages };
   }
 
   private handleStreamError(
-    error: string,
-    assistantMessageIndex: number
-  ): void {
-    console.error('Error sending message stream:', error);
-    this.messages.update((currentMessages) => {
-      const updatedMessages = [...currentMessages];
+    state: MessagesState,
+    error: unknown
+  ): MessagesState {
+    console.error('Stream processing error:', error);
+    const newMessages = [...state.messages];
+    const activeAssistantMessage =
+      state.activeAssistantMessageIndex !== null
+        ? state.messages[state.activeAssistantMessageIndex]
+        : null;
 
-      if (
-        assistantMessageIndex < updatedMessages.length &&
-        updatedMessages[assistantMessageIndex]?.sender === 'assistant'
-      ) {
-        const currentAssistantMessage = updatedMessages[assistantMessageIndex];
-        currentAssistantMessage.text =
-          'Error: Failed to connect to streaming service.';
-        currentAssistantMessage.isLoading = false;
-      } else {
-        updatedMessages.push({
-          text: 'Error: Failed to connect to streaming service.',
-          sender: 'assistant',
-          isLoading: false,
-        });
-      }
+    if (activeAssistantMessage) {
+      activeAssistantMessage.text =
+        'Error: Failed to connect to streaming service.';
+      activeAssistantMessage.isLoading = false;
 
-      return updatedMessages;
+      return { ...state, messages: newMessages };
+    }
+
+    newMessages.push({
+      text: 'Error: Failed to connect to streaming service.',
+      sender: MessageSenderEnum.Assistant,
+      isLoading: false,
     });
 
-    this.isGloballyLoading.set(false);
+    return { ...state, messages: newMessages };
   }
 
-  private handleStreamComplete(assistantMessageIndex: number): void {
-    this.messages.update((currentMessages) => {
-      const updatedMessages = [...currentMessages];
-      if (
-        assistantMessageIndex < updatedMessages.length &&
-        updatedMessages[assistantMessageIndex]?.sender === 'assistant'
-      ) {
-        const currentAssistantMessage = updatedMessages[assistantMessageIndex];
-        if (currentAssistantMessage.isLoading) {
-          currentAssistantMessage.isLoading = false;
-        }
+  private handleStreamCompleted(state: MessagesState): MessagesState {
+    if (
+      state.activeAssistantMessageIndex !== null &&
+      state.messages[state.activeAssistantMessageIndex]
+    ) {
+      const newMessages = [...state.messages];
+      const assistantMsg = {
+        ...newMessages[state.activeAssistantMessageIndex],
+      };
+      if (assistantMsg.isLoading) {
+        assistantMsg.isLoading = false;
       }
+      newMessages[state.activeAssistantMessageIndex] = assistantMsg;
 
-      return updatedMessages;
-    });
+      return { ...state, messages: newMessages };
+    }
 
-    this.isGloballyLoading.set(false);
+    return state;
   }
 }

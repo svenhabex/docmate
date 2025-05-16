@@ -4,7 +4,7 @@ import {
   computed,
   input,
 } from '@angular/core';
-import { MessageSender } from '../chat.service';
+import { MessageSender, MessageSenderEnum } from '../chat.types';
 
 @Component({
   selector: 'app-message-bubble',
@@ -17,7 +17,7 @@ export class MessageBubbleComponent {
   readonly type = input.required<MessageSender>();
 
   readonly typeClasses = computed(() => {
-    return this.type() === 'user'
+    return this.type() === MessageSenderEnum.User
       ? 'ml-auto bg-primary-500'
       : 'mr-auto bg-surface-700';
   });
