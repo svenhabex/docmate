@@ -22,51 +22,26 @@ import {
 } from 'rxjs/operators';
 import { toSignal } from '@angular/core/rxjs-interop';
 import {
-  MessageSender,
+  ChatMessage,
+  MessageAction,
+  MessageActionTypeEnum,
   MessageSenderEnum,
-  Source,
+  MessagesState,
   StreamedChatResponsePart,
   StreamedResponsePartTypeEnum,
 } from './chat.types';
-
-type ChatMessage = {
-  text: string;
-  sender: MessageSender;
-  sources?: Source[];
-  isLoading?: boolean;
-};
-
-type MessagesState = {
-  messages: ReadonlyArray<ChatMessage>;
-  activeAssistantMessageIndex: number | null;
-};
-
-const MessageActionTypeEnum = {
-  AddUserMessage: 'addUserMessage',
-  AddAssistantPlaceholder: 'addAssistantPlaceholder',
-  UpdateAssistantMessage: 'updateAssistantMessage',
-  HandleStreamError: 'handleStreamError',
-  StreamCompleted: 'streamCompleted',
-} as const;
-
-type MessageAction =
-  | { type: typeof MessageActionTypeEnum.AddUserMessage; text: string }
-  | { type: typeof MessageActionTypeEnum.AddAssistantPlaceholder }
-  | {
-      type: typeof MessageActionTypeEnum.UpdateAssistantMessage;
-      part: StreamedChatResponsePart;
-    }
-  | { type: typeof MessageActionTypeEnum.HandleStreamError; error: unknown }
-  | { type: typeof MessageActionTypeEnum.StreamCompleted };
+import { LoadingDotsComponent } from './loading-dots/loading-dots.component';
 
 @Component({
   selector: 'app-chat',
   templateUrl: './chat.component.html',
+  styleUrls: ['./chat.component.scss'],
   imports: [
     ReactiveFormsModule,
     TextareaModule,
     ButtonModule,
     MessageBubbleComponent,
+    LoadingDotsComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -83,8 +58,8 @@ export class ChatComponent {
   readonly #loadingEnd$ = this.messageActions$.pipe(
     filter(
       (action) =>
-        action.type === MessageActionTypeEnum.StreamCompleted ||
-        action.type === MessageActionTypeEnum.HandleStreamError
+        action.type === MessageActionTypeEnum.HandleStreamError ||
+        action.type === MessageActionTypeEnum.StreamCompleted
     ),
     map(() => false)
   );

@@ -18,7 +18,7 @@ export class MessageBubbleComponent {
 
   readonly typeClasses = computed(() => {
     return this.type() === MessageSenderEnum.User
-      ? 'ml-auto bg-primary-500'
-      : 'mr-auto bg-surface-700';
+      ? 'px-5 py-4 rounded-4xl ml-auto bg-surface-800'
+      : 'mr-auto bg-transparent';
   });
 }

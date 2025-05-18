@@ -37,3 +37,33 @@ export type StreamedChatResponsePart =
   | StreamedChunk
   | StreamedDone
   | StreamedError;
+
+export type ChatMessage = {
+  text: string;
+  sender: MessageSender;
+  sources?: Source[];
+  isLoading?: boolean;
+};
+
+export type MessagesState = {
+  messages: ReadonlyArray<ChatMessage>;
+  activeAssistantMessageIndex: number | null;
+};
+
+export const MessageActionTypeEnum = {
+  AddUserMessage: 'addUserMessage',
+  AddAssistantPlaceholder: 'addAssistantPlaceholder',
+  UpdateAssistantMessage: 'updateAssistantMessage',
+  HandleStreamError: 'handleStreamError',
+  StreamCompleted: 'streamCompleted',
+} as const;
+
+export type MessageAction =
+  | { type: typeof MessageActionTypeEnum.AddUserMessage; text: string }
+  | { type: typeof MessageActionTypeEnum.AddAssistantPlaceholder }
+  | {
+      type: typeof MessageActionTypeEnum.UpdateAssistantMessage;
+      part: StreamedChatResponsePart;
+    }
+  | { type: typeof MessageActionTypeEnum.HandleStreamError; error: unknown }
+  | { type: typeof MessageActionTypeEnum.StreamCompleted };

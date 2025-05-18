@@ -2,6 +2,10 @@
   <div class="flex flex-col gap-6">
     @for (message of messages(); track message.text) {
     <app-message-bubble [content]="message.text" [type]="message.sender" />
+    } 
+    
+    @if (isLoading()) {
+    <app-loading-dots />
     }
   </div>
 
@@ -15,13 +19,10 @@
       class="flex-1 field-sizing-content border-none bg-transparent h-full max-h-[400px] resize-none"
       pTextarea
       formControlName="message"
-      style="border: none; background-color: transparent"
       (keydown)="onKeyDown($event)"
     ></textarea>
     <div class="flex pr-4 pb-4 pt-4">
-      <button pButton icon="pi pi-send" [loading]="isLoading()" type="submit">
-        Send
-      </button>
+      <button pButton icon="pi pi-send" type="submit">Send</button>
     </div>
   </form>
 </div>
